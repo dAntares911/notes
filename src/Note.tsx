@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import type { Note as NoteType, NoteColor } from './types';
+import type { Note as NoteType, NoteColor, NotePriority } from './types';
 
 interface NoteProps {
     note: NoteType;
@@ -30,10 +30,11 @@ export const Note: React.FC<NoteProps> = ({
 
     // Handle note dragging
     const handleMouseDown = (e: React.MouseEvent) => {
-        // Don't start drag if clicking on textarea, resize handles, or color pickers
+        // Don't start drag if clicking on textarea, resize handles, color pickers, or priority selector
         if (e.target === contentRef.current ||
             (e.target as HTMLElement).classList.contains('resize-handle') ||
-            (e.target as HTMLElement).classList.contains('color-picker')) {
+            (e.target as HTMLElement).classList.contains('color-picker') ||
+            (e.target as HTMLElement).classList.contains('priority-selector')) {
             return;
         }
 
@@ -48,13 +49,14 @@ export const Note: React.FC<NoteProps> = ({
             const newX = e.clientX - startX;
             const newY = e.clientY - startY;
 
-            // Allow notes to go beyond bounds when dragging (so they can reach trash zone)
-            // Only constrain to a reasonable area to prevent notes from going too far off-screen
-            const buffer = 200; // Allow notes to go 200px beyond normal bounds
-            const minX = -buffer;
-            const maxX = window.innerWidth + buffer;
-            const minY = -buffer;
-            const maxY = window.innerHeight + buffer;
+            // Smart boundary constraints: allow some overflow for trash zone but keep notes accessible
+            const notePartialWidth = note.width * 0.3; // Keep 30% of note visible
+            const notePartialHeight = note.height * 0.3; // Keep 30% of note visible
+
+            const minX = -(note.width - notePartialWidth); // Allow most of note to go left, but keep part visible
+            const maxX = window.innerWidth - notePartialWidth; // Allow most of note to go right, but keep part visible
+            const minY = -(note.height - notePartialHeight); // Allow most of note to go up, but keep part visible
+            const maxY = window.innerHeight - notePartialHeight; // Allow most of note to go down, but keep part visible
 
             onUpdate(note.id, {
                 x: Math.max(minX, Math.min(newX, maxX)),
@@ -140,13 +142,16 @@ export const Note: React.FC<NoteProps> = ({
                 }
             }
 
-            // Apply bounds checking while preserving the resize behavior
-            const minX = 0;
-            const maxX = window.innerWidth - newWidth;
-            const minY = 0;
-            const maxY = window.innerHeight - newHeight;
+            // Apply smart bounds checking while preserving the resize behavior
+            const notePartialWidth = Math.max(100, newWidth * 0.3); // At least 100px or 30% visible
+            const notePartialHeight = Math.max(100, newHeight * 0.3); // At least 100px or 30% visible
 
-            // Only constrain position if it would go outside bounds
+            const minX = -(newWidth - notePartialWidth);
+            const maxX = window.innerWidth - notePartialWidth;
+            const minY = -(newHeight - notePartialHeight);
+            const maxY = window.innerHeight - notePartialHeight;
+
+            // Only constrain position if it would go outside accessible bounds
             if (newX < minX) {
                 const overflow = minX - newX;
                 newX = minX;
@@ -197,6 +202,13 @@ export const Note: React.FC<NoteProps> = ({
         onUpdate(note.id, { color });
     };
 
+    const handlePriorityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const priority = parseInt(e.target.value) as NotePriority;
+        onUpdate(note.id, { priority });
+    };
+
     useEffect(() => {
         if (contentRef.current && note.content === '') {
             contentRef.current.focus();
@@ -217,12 +229,35 @@ export const Note: React.FC<NoteProps> = ({
                 borderColor: note.color === 'yellow' ? '#f1c40f' :
                     note.color === 'pink' ? '#e84393' :
                         note.color === 'blue' ? '#0984e3' :
-                            note.color === 'green' ? '#00b894' : '#e17055'
+                            note.color === 'green' ? '#00b894' : '#e17055',
+                borderWidth: note.priority === 1 ? '3px' :
+                    note.priority === 2 ? '2px' : '1px'
             }}
             onMouseDown={handleMouseDown}
         >
             <div className="note-header">
-                <span className="note-id note-drag-handle">#{note.id.slice(-4)}</span>
+                <div className="note-info">
+                    <span className="note-id note-drag-handle">#{note.id.slice(-4)}</span>
+                    <span className="priority-badge" title={`Priority ${note.priority}`}>
+                        {note.priority === 1 ? '🔥' :
+                            note.priority === 2 ? '⚡' :
+                                note.priority === 3 ? '📌' :
+                                    note.priority === 4 ? '📄' : '📋'}
+                    </span>
+                    <select
+                        className="priority-selector"
+                        value={note.priority}
+                        onChange={handlePriorityChange}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        title="Priority (1=top, 5=bottom)"
+                    >
+                        <option value={1}>🔥 Top</option>
+                        <option value={2}>⚡ High</option>
+                        <option value={3}>📌 Normal</option>
+                        <option value={4}>📄 Low</option>
+                        <option value={5}>📋 Bottom</option>
+                    </select>
+                </div>
                 <div className="note-colors">
                     {(Object.keys(NOTE_COLORS) as NoteColor[]).map(color => (
                         <div
